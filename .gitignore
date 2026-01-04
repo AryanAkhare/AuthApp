@@ -1,0 +1,57 @@
+# .gitignore — Node.js project (Windows + VS Code)
+
+# Node modules
+node_modules/
+
+# Environment / secrets
+.env
+.env.*.local
+.env.local
+!.env.example
+
+# Logs
+logs/
+*.log
+debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime / temporary files
+pids/
+*.pid
+*.seed
+tmp/
+temp/
+.npmrc.local
+.node_repl_history
+
+# Build output / coverage
+dist/
+build/
+coverage/
+.nyc_output/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# IDE / editor
+.vscode/
+.idea/
+*.suo
+*.ntvs_analysis.dat
+
+# Misc
+.cache/
+.parcel-cache/
+uploads/
+*.tgz
+*.zip
+
+# Test related
+jest/
+.jest/
+coverage-final.json
