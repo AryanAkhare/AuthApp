@@ -6,6 +6,8 @@ const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
 
+//cookie parser
+
 // DB connect
 require("./config/database.js").connectDB();
 
