@@ -1,0 +1,108 @@
+AuthApp — Full flow & explanation (detailed)
+
+Overview
+--------
+AuthApp is a small Express + MongoDB application that implements user authentication using bcrypt for password hashing and JSON Web Tokens (JWTs) for session/authentication. The app issues a JWT on login and sends it to the client as an httpOnly cookie (named `token`). Protected routes validate the JWT using a middleware and authorize access based on claims (e.g., `role`).
+
+High-level flow
+---------------
+1. Client registers (signup) → server stores user with hashed password.
+2. Client logs in (login) → server verifies password, creates JWT, sets cookie, and returns user info.
+3. Client calls protected routes → browser sends cookie automatically (if credentials and CORS are correct) → server reads cookie, verifies JWT, and either allows access or rejects it.
+
+Files & responsibilities
+------------------------
+- `index.js` (entry point):
+  - Loads env vars, sets up Express, applies global middleware (cookie-parser, express.json, CORS), and registers routes.
+  - Adds a small debug logger to print incoming requests and cookies for development.
+  - Connects to MongoDB via `config/database.js`.
+
+- `config/database.js`:
+  - Connects to MongoDB using `process.env.DATABASE_URL` (skips connection in dev if not set).
+
+- `model/user.js`:
+  - Mongoose user schema. (Holds `name`, `email`, `password`, `role`, etc.)
+
+- `controllers/auth.js`:
+  - `signup`: validates input, hashes password with `bcrypt`, stores the user in MongoDB.
+  - `login`: validates credentials, signs a JWT with `JWT_SECRET`, sets cookie `token` (httpOnly), and returns user info (without password).
+  - Cookie options are adjusted for production vs development (`sameSite`/`secure`).
+
+- `middlewares/auth.js`:
+  - `auth` middleware: attempts to read token from `req.cookies.token`, `req.body.token`, or `Authorization` header; verifies it with the JWT secret; attaches decoded payload to `req.user` and calls `next()`.
+  - `isStudent` / `isAdmin` role-check middlewares: inspect `req.user.role` and deny access if role doesn't match.
+
+- `routes/user.js`:
+  - Defines endpoints: `POST /signup`, `POST /login`, `GET /test` (protected), `GET /student` (protected, Student role), `GET /admin` (protected, Admin role), and a debug route to inspect cookies/headers.
+
+Step-by-step request flows (with details)
+----------------------------------------
+A. Signup (POST /api/v1/signup)
+  1. Client sends JSON: { name, email, password, role }.
+  2. Server `controllers.signup` validates fields.
+  3. Password hashed with `bcrypt.hash(password, saltRounds)`.
+  4. New user saved in MongoDB (`User.create`).
+  5. Server responds 201 Created with success message.
+
+B. Login (POST /api/v1/login)
+  1. Client sends JSON: { email, password }.
+  2. Server finds user by email in DB.
+  3. `bcrypt.compare(password, user.password)` verifies password.
+  4. If valid, server constructs a JWT payload (e.g., id, email, role) and signs it with `JWT_SECRET`.
+  5. Server sets cookie `token` using `res.cookie('token', token, cookieOptions)` where cookieOptions include `httpOnly: true`, a `maxAge`, and `sameSite`/`secure` that vary depending on `NODE_ENV`.
+     - For local development: `SameSite: 'Lax'`, `secure: false` (cookies sent on same-site requests and top-level navigations).
+     - For cross-site production: `SameSite: 'None'`, `secure: true` (requires HTTPS).
+  6. Server returns status 200 and user object (with password removed).
+
+Why cookie is httpOnly
+- httpOnly prevents JavaScript (e.g., `document.cookie`) from accessing the token. This reduces risk from XSS attacks. Browsers still send httpOnly cookies automatically on matching requests.
+
+C. Accessing protected routes (GET /api/v1/test)
+  1. Client makes a request to `/api/v1/test`.
+     - If using a browser frontend on a different origin, the client must include credentials on the request:
+       - fetch: `credentials: 'include'` 
+       - axios: `{ withCredentials: true }`
+     - Server must enable CORS with `credentials: true` and an explicit `origin` value (not `*`).
+  2. Browser attaches `Cookie: token=...` header automatically (when allowed).
+  3. Server's `cookie-parser` middleware populates `req.cookies`.
+  4. `auth` middleware checks `req.cookies.token` (or other token locations), uses `jwt.verify(token, JWT_SECRET)` to validate, and attaches `req.user = payload`.
+  5. If verified, the next handler returns the protected resource (status 200); otherwise, server returns 401/403.
+
+Edge cases & debugging tips
+--------------------------
+- Cookie not being set on login:
+  - Check login response headers for `Set-Cookie` in browser DevTools Network tab.
+  - Ensure the login request included correct origin and credentials (if cross-site).
+
+- Cookie set but not sent on subsequent requests:
+  - If frontend and API are different origins, client must use credentials and server must allow credentials in CORS.
+  - `SameSite` may block cookie on certain cross-site requests: for cross-site, use `SameSite=None` and `Secure` (HTTPS) in production.
+  - httpOnly cookies won't appear in `document.cookie`—use server logs or DevTools Application tab to inspect cookies.
+
+- Token missing in `req.cookies` but present in `req.headers.cookie`:
+  - `cookie-parser` normally parses `req.headers.cookie` into `req.cookies`. If you see raw `cookie` header but `req.cookies` empty, ensure `cookie-parser` middleware is applied before your auth middleware.
+
+Added debug helpers in this repo
+--------------------------------
+- Request/cookie logger middleware (in `index.js`) prints method, URL, and `req.cookies` for each request.
+- `GET /api/v1/debug` prints parsed `req.cookies` and `req.headers` for quick inspection.
+- Temporary test script `test-cookie.js` demonstrates signup → login → capture `Set-Cookie` header → call protected endpoints with the cookie.
+
+Security notes & recommendations
+--------------------------------
+- Keep `JWT_SECRET` secret and long enough.
+- Consider short-lived access tokens + refresh tokens for longer sessions.
+- Use HTTPS and `secure: true` for cookies in production.
+- Protect against CSRF when using cookies for auth: consider SameSite, CSRF tokens, or double-submit pattern depending on your app requirements.
+
+Local development checklist
+--------------------------
+- Use `.env` to set `DATABASE_URL`, `JWT_SECRET`, `PORT` and optionally `CLIENT_URL`.
+- Run server: `npm run dev` (nodemon). Check logs for request and cookie output.
+- From the frontend, send credentials with fetch/axios when calling login and protected routes.
+- Inspect cookies in browser DevTools: Application → Cookies → `localhost`.
+
+Summary
+-------
+AuthApp stores hashed passwords, signs JWTs at login, sends the JWT as an httpOnly cookie, and uses middleware to verify tokens for protected routes. For cross-origin flows, ensure CORS credentials and client-side `credentials: 'include'` are used, and adjust cookie options for production (SameSite=None + Secure=true + HTTPS).
+
