@@ -53,7 +53,6 @@ exports.signup = async (req, res) => {
   }
 };
 
-
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -67,7 +66,8 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success:false, message:"User not found" });
     }
 
-    if (!(await bcrypt.compare(password, user.password))) {
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
       return res.status(400).json({ success:false, message:"Wrong password" });
     }
 
@@ -77,25 +77,33 @@ exports.login = async (req, res) => {
       role: user.role,
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "2h" });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: "2h",
+    });
 
     const userObj = user.toObject();
-    userObj.password = undefined;
+    delete userObj.password;
 
-    res.cookie("token", token, {
-      expires: new Date(Date.now() + 3*24*60*60*1000),
+    // Cookie options: adjust for production vs local dev
+    const cookieOptions = {
       httpOnly: true,
-    });
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 2 * 60 * 60 * 1000,
+    };
 
-    return res.status(200).json({
-      success: true,
-      token,
-      user: userObj,
-      message: "Login successful",
-    });
+    res
+      .cookie("token", token, cookieOptions)
+      .status(200)
+      .json({
+        success: true,
+        user: userObj,
+        message: "Login successful",
+      });
 
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success:false, message:"Login failed" });
   }
 };
+

@@ -4,10 +4,16 @@ require("dotenv").config();
 // ================= AUTH MIDDLEWARE =================
 exports.auth = (req, res, next) => {
   try {
+
+      console.log("auth middleware start", { cookies: req.cookies, headers: req.headers });
+      console.log("cookie", req.cookies?.token);
+      console.log("body", req.body?.token);
+    //
     // Get token from body or Authorization header
     const token =
+    req.cookies.token ||
       req.body.token ||
-      req.headers.authorization?.replace("Bearer ", "");
+      req.headers.authorization?.replace("Bearer ", ""); //safest
 
     // If token not found
     if (!token) {
